@@ -11,7 +11,7 @@ let modifierOptions: [(name: String, flag: CGEventFlags, key: String)] = [
     ("Fn", .maskSecondaryFn, "fn"),
     ("Control", .maskControl, "control"),
     ("Option", .maskAlternate, "option"),
-    ("Command", .maskCommand, "command"),
+    ("Command (may conflict with macOS)", .maskCommand, "command"),
     ("Shift", .maskShift, "shift"),
 ]
 
@@ -19,7 +19,7 @@ let modifierOptions: [(name: String, flag: CGEventFlags, key: String)] = [
 func callback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
 
     // Re-enable the tap if macOS disabled it (happens under system load)
-    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+    if type == .tapDisabledByTimeout {
         if let tap = globalEventTap {
             CGEvent.tapEnable(tap: tap, enable: true)
         }
@@ -42,14 +42,20 @@ func callback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon:
                 return Unmanaged.passRetained(newEvent)
             }
         } else if type == .leftMouseDown {
-            // Stuck state: got a new mouseDown while supposedly mid-drag — reset
+            // Stuck state: got a new mouseDown while supposedly mid-drag.
+            // Send the missing otherMouseUp, then fall through to normal handling.
             isMiddleClicking = false
+            if let upEvent = CGEvent(mouseEventSource: nil, mouseType: .otherMouseUp, mouseCursorPosition: event.location, mouseButton: .center) {
+                upEvent.timestamp = event.timestamp
+                upEvent.post(tap: .cgSessionEventTap)
+            }
+            // Don't return — fall through to check if this new click starts a middle-click
+        } else {
+            return nil
         }
-        // If we are middle clicking, swallow strictly related left-mouse events
-        return nil
     }
 
-    // 2. Detect the Start of a Click (Fn + Left Mouse Down)
+    // 2. Detect the Start of a Click (Modifier + Left Mouse Down)
     if type == .leftMouseDown {
         let flags = event.flags
         if flags.contains(activeModifier) {
@@ -69,6 +75,39 @@ func callback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon:
     return Unmanaged.passUnretained(event)
 }
 
+// Draw a mouse icon with highlighted middle button for the menu bar
+func makeMenuBarIcon() -> NSImage {
+    let size = NSSize(width: 14, height: 18)
+    let image = NSImage(size: size, flipped: false) { rect in
+        let w = rect.width, h = rect.height
+        NSColor.black.setStroke()
+        NSColor.black.setFill()
+
+        // Mouse body — rounded rectangle
+        let body = NSBezierPath(roundedRect: NSRect(x: 1, y: 0, width: w - 2, height: h - 1), xRadius: 5, yRadius: 5)
+        body.lineWidth = 1.4
+        body.stroke()
+
+        // Divider line between left and right buttons
+        let dividerY = h * 0.55
+        let left = NSBezierPath()
+        left.move(to: NSPoint(x: 1, y: dividerY))
+        left.line(to: NSPoint(x: w - 1, y: dividerY))
+        left.lineWidth = 0.8
+        left.stroke()
+
+        // Middle button — small filled rectangle at top center
+        let btnW: CGFloat = 3.5
+        let btnH: CGFloat = 5
+        let btnRect = NSRect(x: (w - btnW) / 2, y: dividerY, width: btnW, height: btnH)
+        let btn = NSBezierPath(roundedRect: btnRect, xRadius: 1, yRadius: 1)
+        btn.fill()
+
+        return true
+    }
+    return image
+}
+
 // Application Delegate to handle Menu Bar
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
@@ -84,7 +123,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Create Menu Bar Item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.title = "M"
+            button.image = makeMenuBarIcon()
+            button.image?.isTemplate = true
         }
 
         let menu = NSMenu()
@@ -106,16 +146,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Quit MiddleClicker", action: #selector(quitApp), keyEquivalent: "q"))
         statusItem.menu = menu
 
-        // Request Accessibility Permissions
+        // Prompt for Accessibility permissions if not yet granted (the tap will fail without it)
         let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String : true]
-        let accessEnabled = AXIsProcessTrustedWithOptions(options)
-
-        if !accessEnabled {
-            let alert = NSAlert()
-            alert.messageText = "MiddleClicker needs Accessibility access"
-            alert.informativeText = "Enable it in System Settings > Privacy & Security > Accessibility, then relaunch."
-            alert.runModal()
-        }
+        AXIsProcessTrustedWithOptions(options)
 
         // Create the Event Tap
         let eventMask = (1 << CGEventType.leftMouseDown.rawValue) | (1 << CGEventType.leftMouseUp.rawValue) | (1 << CGEventType.leftMouseDragged.rawValue)
@@ -142,6 +175,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func modifierSelected(_ sender: NSMenuItem) {
+        guard sender.tag >= 0 && sender.tag < modifierOptions.count else { return }
         let option = modifierOptions[sender.tag]
         activeModifier = option.flag
         UserDefaults.standard.set(option.key, forKey: "modifierKey")
