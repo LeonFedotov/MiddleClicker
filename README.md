@@ -1,56 +1,64 @@
-MiddleClicker
+# MiddleClicker
 
-A lightweight, open-source macOS utility that turns Fn + Click (or Fn + Tap) into a Middle Click.
+A lightweight macOS menu-bar utility that turns **Modifier + Click** into a **Middle Click**.
 
-Designed specifically for 3D applications like Blender, Maya, and CAD software where holding the middle mouse button is required to pan or rotate the viewport.
+Built for 3D apps like Blender, Maya, and CAD software where middle-mouse drag is essential for viewport navigation — but your trackpad doesn't have one.
 
+## Features
 
-Features
+- **Configurable modifier key** — choose between Fn, Control, Option, Command, or Shift from the menu bar
+- **Native trackpad support** — works with physical clicks and holds, including continuous middle-mouse drags
+- **Lightweight** — single-file Swift app, runs as a background accessory (no Dock icon)
+- **Auto-recovery** — re-enables itself if macOS disables the event tap under load
 
-🖱️ Fn + Click = Middle Click: Hold Fn and click dragging on the trackpad to emulate a middle-mouse drag.
+## Install
 
-🤏 Native Trackpad Support: Works with physical clicks and simulates the middle button "hold" state perfectly.
+### Download
 
-⚡️ Lightweight: Written in Swift, runs as a background accessory (no Dock icon).
+1. Grab `MiddleClicker_Installer.dmg` from the [Releases](https://github.com/LeonFedotov/MiddleClicker/releases) page
+2. Open the DMG and drag **MiddleClicker** into Applications
+3. First launch: right-click the app and select **Open** (it's unsigned)
+4. Grant **Accessibility** permissions when prompted
 
-🔓 Open Source: Verify the code yourself; no hidden scripts.
+### Build from source
 
-Installation
-
-Option 1: Download the App
-
-Go to the Releases page.
-
-Download MiddleClicker_Installer.dmg.
-
-Open the DMG and drag MiddleClicker into your Applications folder.
-
-First Run: Right-click the app and select Open (since this is an unsigned open-source app).
-
-Grant Accessibility Permissions when prompted.
-
-Option 2: Build from Source
-
-If you prefer to compile it yourself:
-
-Clone this repository:
-
-git clone [https://github.com/yourusername/MiddleClicker.git](https://github.com/fordft168/MiddleClicker.git)
+```bash
+git clone https://github.com/LeonFedotov/MiddleClicker.git
 cd MiddleClicker
-
-
-Run the build script:
-
-chmod +x build.sh
 ./build.sh
+```
 
+This compiles the app, codesigns it ad-hoc, and packages `MiddleClicker_Installer.dmg`.
 
-The compiled MiddleClicker_Installer.dmg will be in the project folder.
+## Usage
 
-How it works
+Once running, you'll see an **M** in your menu bar. Click it to:
 
-This app uses a CGEventTap to intercept leftMouseDown events. If the Fn key is detected as a modifier, it swallows the left click and generates a otherMouseDown (Button 3) event instead. It tracks the drag state to allow for continuous middle-mouse dragging operations.
+- **Modifier Key** — pick which key activates middle-click (default: Fn). Your choice is saved across restarts.
+- **Quit MiddleClicker**
 
-License
+Hold your chosen modifier and click/drag on the trackpad to emulate a middle-mouse button.
 
-MIT License
+## Troubleshooting
+
+### Accessibility permission stuck / won't re-prompt
+
+If you moved the app or rebuilt it, macOS may have a stale permission entry. Reset it:
+
+```bash
+tccutil reset Accessibility com.opensource.MiddleClicker
+```
+
+Then relaunch — the permission prompt will appear again.
+
+### App stopped responding to clicks
+
+macOS can disable event taps under heavy system load. The app auto-recovers from this, but if it persists, quit and relaunch.
+
+## How it works
+
+A `CGEventTap` intercepts `leftMouseDown` events. When the selected modifier key is held, the left click is swallowed and replaced with an `otherMouseDown` (button 3) event. Drag and mouse-up events are similarly translated while the middle-click state is active.
+
+## License
+
+MIT
