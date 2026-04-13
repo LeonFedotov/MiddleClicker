@@ -1,6 +1,8 @@
 import Cocoa
 import CoreGraphics
 
+let appVersion = "1.3.0"
+
 // Global state
 var isMiddleClicking = false
 var isLeftDragging = false
@@ -236,7 +238,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(modifierItem)
 
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit MiddleClicker", action: #selector(quitApp), keyEquivalent: "q"))
+        let versionItem = NSMenuItem(title: "MiddleClicker v\(appVersion)", action: #selector(openRepo), keyEquivalent: "")
+        menu.addItem(versionItem)
+        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
         statusItem.menu = menu
 
         // Prompt for Accessibility permissions if not yet granted (the tap will fail without it)
@@ -291,6 +295,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             item.state = .off
         }
         sender.state = .on
+    }
+
+    @objc func openRepo() {
+        NSWorkspace.shared.open(URL(string: "https://github.com/LeonFedotov/MiddleClicker")!)
     }
 
     @objc func quitApp() {
