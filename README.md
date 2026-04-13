@@ -60,7 +60,7 @@ Hold your chosen modifier and click/drag on the trackpad to emulate a middle-mou
 If you moved the app or rebuilt it, macOS may have a stale permission entry. Reset it:
 
 ```bash
-tccutil reset Accessibility com.opensource.MiddleClicker
+tccutil reset Accessibility com.leonfedotov.MiddleClicker
 ```
 
 Then relaunch — the permission prompt will appear again.

@@ -5,6 +5,9 @@ APP_NAME="MiddleClicker"
 SWIFT_SOURCE="MiddleClicker.swift"
 DMG_NAME="${APP_NAME}_Installer.dmg"
 STAGING_DIR="dmg_staging"
+SIGN_IDENTITY="Developer ID Application: Leonid Fedotov (8X4NGM7JFT)"
+BUNDLE_ID="com.leonfedotov.${APP_NAME}"
+TEAM_ID="8X4NGM7JFT"
 
 # Check if swift file exists
 if [ ! -f "$SWIFT_SOURCE" ]; then
@@ -43,7 +46,7 @@ cat > "${APP_NAME}.app/Contents/Info.plist" <<EOF
     <key>CFBundleExecutable</key>
     <string>${APP_NAME}</string>
     <key>CFBundleIdentifier</key>
-    <string>com.opensource.${APP_NAME}</string>
+    <string>${BUNDLE_ID}</string>
     <key>CFBundleName</key>
     <string>${APP_NAME}</string>
     <key>CFBundlePackageType</key>
@@ -60,9 +63,9 @@ cat > "${APP_NAME}.app/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
-# 5. Ad-hoc Code Signing
+# 5. Code Signing with Developer ID
 echo "🔏 Signing the Application..."
-codesign --force --deep --sign - "${APP_NAME}.app"
+codesign --force --options runtime --sign "${SIGN_IDENTITY}" "${APP_NAME}.app"
 
 # 6. Prepare Staging Area (This adds the Applications Shortcut)
 echo "🔗 Creating Applications shortcut..."
@@ -77,6 +80,19 @@ hdiutil create -volname "${APP_NAME}" -srcfolder "$STAGING_DIR" -ov -format UDZO
 
 # Cleanup
 rm -rf "$STAGING_DIR"
+
+# 8. Notarize the DMG (requires: xcrun notarytool store-credentials "MiddleClicker" --team-id 8X4NGM7JFT --apple-id YOUR_APPLE_ID)
+echo "📮 Submitting for notarization..."
+xcrun notarytool submit "$DMG_NAME" --keychain-profile "MiddleClicker" --wait
+
+if [ $? -ne 0 ]; then
+    echo "⚠️  Notarization failed. The DMG is still signed but not notarized."
+    echo "   Users will need to right-click → Open on first launch."
+    echo "   Run: xcrun notarytool store-credentials \"MiddleClicker\" --team-id ${TEAM_ID} --apple-id YOUR_APPLE_ID"
+else
+    echo "📎 Stapling notarization ticket..."
+    xcrun stapler staple "$DMG_NAME"
+fi
 
 echo ""
 echo "✅ Build Complete!"
