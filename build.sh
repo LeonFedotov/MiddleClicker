@@ -27,7 +27,18 @@ echo "📂 Creating App Bundle Structure..."
 mkdir -p "${APP_NAME}.app/Contents/MacOS"
 mkdir -p "${APP_NAME}.app/Contents/Resources"
 
-# 3. Compile the Swift Code into the App Bundle
+# 3. Generate app icon if needed
+if [ ! -f "${APP_NAME}.icns" ] && [ -f "generate_icon.swift" ]; then
+    echo "🎨 Generating app icon..."
+    swift generate_icon.swift
+fi
+
+# 4. Copy icon into bundle
+if [ -f "${APP_NAME}.icns" ]; then
+    cp "${APP_NAME}.icns" "${APP_NAME}.app/Contents/Resources/"
+fi
+
+# 5. Compile the Swift Code into the App Bundle
 echo "🔨 Compiling Swift Code..."
 swiftc "$SWIFT_SOURCE" -o "${APP_NAME}.app/Contents/MacOS/${APP_NAME}"
 
@@ -55,6 +66,8 @@ cat > "${APP_NAME}.app/Contents/Info.plist" <<EOF
     <string>1.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <key>CFBundleIconFile</key>
+    <string>${APP_NAME}</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSHighResolutionCapable</key>

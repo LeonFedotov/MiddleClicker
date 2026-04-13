@@ -253,8 +253,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                                           callback: callback,
                                           userInfo: nil) else {
             let alert = NSAlert()
-            alert.messageText = "MiddleClicker failed to start"
-            alert.informativeText = "Could not create event tap. Make sure Accessibility access is granted and relaunch."
+            alert.messageText = "MiddleClicker needs Accessibility access"
+            alert.informativeText = "Please allow Accessibility permissions in System Settings > Privacy & Security > Accessibility, then restart the app."
             alert.runModal()
             NSApplication.shared.terminate(self)
             return
