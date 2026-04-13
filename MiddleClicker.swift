@@ -3,8 +3,10 @@ import CoreGraphics
 
 // Global state
 var isMiddleClicking = false
+var isEnabled = true
 var globalEventTap: CFMachPort?
 var activeModifier: CGEventFlags = .maskSecondaryFn
+weak var appDelegate: AppDelegate?
 
 // Modifier key options: display name, CGEventFlags value, UserDefaults key string
 let modifierOptions: [(name: String, flag: CGEventFlags, key: String)] = [
@@ -26,6 +28,11 @@ func callback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon:
         return Unmanaged.passUnretained(event)
     }
 
+    // Pass through everything when disabled
+    if !isEnabled {
+        return Unmanaged.passUnretained(event)
+    }
+
     // 1. Handle Dragging and Mouse Up if we are currently in a "Middle Click" state
     if isMiddleClicking {
         if type == .leftMouseDragged {
@@ -37,6 +44,7 @@ func callback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon:
         } else if type == .leftMouseUp {
             // End the middle click
             isMiddleClicking = false
+            DispatchQueue.main.async { appDelegate?.updateIcon() }
             if let newEvent = CGEvent(mouseEventSource: nil, mouseType: .otherMouseUp, mouseCursorPosition: event.location, mouseButton: .center) {
                 newEvent.timestamp = event.timestamp
                 return Unmanaged.passRetained(newEvent)
@@ -45,6 +53,7 @@ func callback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon:
             // Stuck state: got a new mouseDown while supposedly mid-drag.
             // Send the missing otherMouseUp, then fall through to normal handling.
             isMiddleClicking = false
+            DispatchQueue.main.async { appDelegate?.updateIcon() }
             if let upEvent = CGEvent(mouseEventSource: nil, mouseType: .otherMouseUp, mouseCursorPosition: event.location, mouseButton: .center) {
                 upEvent.timestamp = event.timestamp
                 upEvent.post(tap: .cgSessionEventTap)
@@ -60,6 +69,7 @@ func callback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon:
         let flags = event.flags
         if flags.contains(activeModifier) {
             isMiddleClicking = true
+            DispatchQueue.main.async { appDelegate?.updateIcon() }
 
             // Create a new Middle Mouse Down event
             if let newEvent = CGEvent(mouseEventSource: nil, mouseType: .otherMouseDown, mouseCursorPosition: event.location, mouseButton: .center) {
@@ -75,8 +85,10 @@ func callback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon:
     return Unmanaged.passUnretained(event)
 }
 
-// Draw a mouse icon with highlighted middle button for the menu bar
-func makeMenuBarIcon() -> NSImage {
+// Icon states for the menu bar
+enum IconState { case idle, active, disabled }
+
+func makeMenuBarIcon(_ state: IconState) -> NSImage {
     let size = NSSize(width: 14, height: 18)
     let image = NSImage(size: size, flipped: false) { rect in
         let w = rect.width, h = rect.height
@@ -84,24 +96,51 @@ func makeMenuBarIcon() -> NSImage {
         NSColor.black.setFill()
 
         // Mouse body — rounded rectangle
-        let body = NSBezierPath(roundedRect: NSRect(x: 1, y: 0, width: w - 2, height: h - 1), xRadius: 5, yRadius: 5)
+        let bodyRect = NSRect(x: 1, y: 0, width: w - 2, height: h - 1)
+        let body = NSBezierPath(roundedRect: bodyRect, xRadius: 5, yRadius: 5)
         body.lineWidth = 1.4
         body.stroke()
 
         // Divider line between left and right buttons
         let dividerY = h * 0.55
-        let left = NSBezierPath()
-        left.move(to: NSPoint(x: 1, y: dividerY))
-        left.line(to: NSPoint(x: w - 1, y: dividerY))
-        left.lineWidth = 0.8
-        left.stroke()
+        let divider = NSBezierPath()
+        divider.move(to: NSPoint(x: 1, y: dividerY))
+        divider.line(to: NSPoint(x: w - 1, y: dividerY))
+        divider.lineWidth = 0.8
+        divider.stroke()
 
-        // Middle button — small filled rectangle at top center
+        // Middle button — filled when active, outline when idle, hidden when disabled
         let btnW: CGFloat = 3.5
         let btnH: CGFloat = 5
         let btnRect = NSRect(x: (w - btnW) / 2, y: dividerY, width: btnW, height: btnH)
         let btn = NSBezierPath(roundedRect: btnRect, xRadius: 1, yRadius: 1)
-        btn.fill()
+        switch state {
+        case .active:
+            btn.fill()
+        case .idle:
+            btn.lineWidth = 0.8
+            btn.stroke()
+        case .disabled:
+            break
+        }
+
+        // Prohibition sign when disabled — circle with diagonal line
+        if state == .disabled {
+            let center = NSPoint(x: w / 2, y: (h - 1) / 2)
+            let radius: CGFloat = min(w, h) / 2 - 0.5
+            let circle = NSBezierPath(ovalIn: NSRect(
+                x: center.x - radius, y: center.y - radius,
+                width: radius * 2, height: radius * 2
+            ))
+            circle.lineWidth = 1.4
+            circle.stroke()
+            let slash = NSBezierPath()
+            let offset = radius * 0.707 // cos(45°)
+            slash.move(to: NSPoint(x: center.x - offset, y: center.y + offset))
+            slash.line(to: NSPoint(x: center.x + offset, y: center.y - offset))
+            slash.lineWidth = 1.4
+            slash.stroke()
+        }
 
         return true
     }
@@ -112,6 +151,7 @@ func makeMenuBarIcon() -> NSImage {
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var modifierMenuItems: [NSMenuItem] = []
+    var enabledMenuItem: NSMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Restore saved modifier key
@@ -120,14 +160,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             activeModifier = option.flag
         }
 
+        // Restore enabled state
+        isEnabled = UserDefaults.standard.object(forKey: "enabled") as? Bool ?? true
+
         // Create Menu Bar Item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let button = statusItem.button {
-            button.image = makeMenuBarIcon()
-            button.image?.isTemplate = true
-        }
+        updateIcon()
 
         let menu = NSMenu()
+
+        // Enabled toggle
+        enabledMenuItem = NSMenuItem(title: "Enabled", action: #selector(toggleEnabled), keyEquivalent: "")
+        enabledMenuItem.state = isEnabled ? .on : .off
+        menu.addItem(enabledMenuItem)
+
+        menu.addItem(NSMenuItem.separator())
 
         // Modifier key submenu
         let modifierSubmenu = NSMenu()
@@ -174,6 +221,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         CGEvent.tapEnable(tap: tap, enable: true)
     }
 
+    func updateIcon() {
+        let state: IconState = !isEnabled ? .disabled : isMiddleClicking ? .active : .idle
+        let icon = makeMenuBarIcon(state)
+        icon.isTemplate = true
+        statusItem.button?.image = icon
+    }
+
+    @objc func toggleEnabled() {
+        isEnabled.toggle()
+        UserDefaults.standard.set(isEnabled, forKey: "enabled")
+        enabledMenuItem.state = isEnabled ? .on : .off
+        if !isEnabled { isMiddleClicking = false }
+        updateIcon()
+    }
+
     @objc func modifierSelected(_ sender: NSMenuItem) {
         guard sender.tag >= 0 && sender.tag < modifierOptions.count else { return }
         let option = modifierOptions[sender.tag]
@@ -193,6 +255,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 // Main Entry Point
 let app = NSApplication.shared
 let delegate = AppDelegate()
+appDelegate = delegate
 app.delegate = delegate
 app.setActivationPolicy(.accessory) // Hides from Dock
 app.run()
