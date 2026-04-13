@@ -3,6 +3,7 @@ import CoreGraphics
 
 // Global state
 var isMiddleClicking = false
+var isLeftDragging = false
 var isEnabled = true
 var globalEventTap: CFMachPort?
 var activeModifier: CGEventFlags = .maskSecondaryFn
@@ -81,64 +82,97 @@ func callback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon:
         }
     }
 
+    // 3. Track regular left-mouse drags (e.g. 3-finger trackpad drag)
+    if type == .leftMouseDragged && !isLeftDragging {
+        isLeftDragging = true
+        DispatchQueue.main.async { appDelegate?.updateIcon() }
+    } else if type == .leftMouseUp && isLeftDragging {
+        isLeftDragging = false
+        DispatchQueue.main.async { appDelegate?.updateIcon() }
+    }
+
     // Pass all other events through unchanged
     return Unmanaged.passUnretained(event)
 }
 
 // Icon states for the menu bar
-enum IconState { case idle, active, disabled }
+enum IconState { case idle, active, leftDrag, disabled }
 
 func makeMenuBarIcon(_ state: IconState) -> NSImage {
-    let size = NSSize(width: 14, height: 18)
+    // Disabled icon is wider to fit the prohibition circle around the mouse
+    let size = state == .disabled ? NSSize(width: 20, height: 20) : NSSize(width: 14, height: 18)
     let image = NSImage(size: size, flipped: false) { rect in
         let w = rect.width, h = rect.height
         NSColor.black.setStroke()
         NSColor.black.setFill()
 
+        // For disabled state, offset the mouse to center it within the larger canvas
+        let offsetX: CGFloat = state == .disabled ? 3 : 0
+        let offsetY: CGFloat = state == .disabled ? 1 : 0
+        let mouseW: CGFloat = 14
+        let mouseH: CGFloat = 18
+
         // Mouse body — rounded rectangle
-        let bodyRect = NSRect(x: 1, y: 0, width: w - 2, height: h - 1)
+        let bodyRect = NSRect(x: offsetX + 1, y: offsetY, width: mouseW - 2, height: mouseH - 1)
         let body = NSBezierPath(roundedRect: bodyRect, xRadius: 5, yRadius: 5)
         body.lineWidth = 1.4
         body.stroke()
 
         // Divider line between left and right buttons
-        let dividerY = h * 0.55
+        let dividerY = offsetY + mouseH * 0.55
         let divider = NSBezierPath()
-        divider.move(to: NSPoint(x: 1, y: dividerY))
-        divider.line(to: NSPoint(x: w - 1, y: dividerY))
+        divider.move(to: NSPoint(x: offsetX + 1, y: dividerY))
+        divider.line(to: NSPoint(x: offsetX + mouseW - 1, y: dividerY))
         divider.lineWidth = 0.8
         divider.stroke()
 
-        // Middle button — filled when active, outline when idle, hidden when disabled
+        // Left button — filled when left-dragging
+        if state == .leftDrag {
+            let leftBtn = NSBezierPath()
+            let bodyLeft = offsetX + 1
+            let midX = offsetX + mouseW / 2
+            let topY = offsetY + mouseH - 1
+            let cornerR: CGFloat = 5
+            leftBtn.move(to: NSPoint(x: midX, y: topY))
+            leftBtn.appendArc(from: NSPoint(x: bodyLeft, y: topY),
+                              to: NSPoint(x: bodyLeft, y: dividerY),
+                              radius: cornerR)
+            leftBtn.line(to: NSPoint(x: bodyLeft, y: dividerY))
+            leftBtn.line(to: NSPoint(x: midX, y: dividerY))
+            leftBtn.close()
+            leftBtn.fill()
+        }
+
+        // Middle button — filled when active, outline when idle
         let btnW: CGFloat = 3.5
         let btnH: CGFloat = 5
-        let btnRect = NSRect(x: (w - btnW) / 2, y: dividerY, width: btnW, height: btnH)
+        let btnRect = NSRect(x: offsetX + (mouseW - btnW) / 2, y: dividerY, width: btnW, height: btnH)
         let btn = NSBezierPath(roundedRect: btnRect, xRadius: 1, yRadius: 1)
         switch state {
         case .active:
             btn.fill()
-        case .idle:
+        case .idle, .leftDrag:
             btn.lineWidth = 0.8
             btn.stroke()
         case .disabled:
             break
         }
 
-        // Prohibition sign when disabled — circle with diagonal line
+        // Prohibition sign when disabled — large circle with diagonal slash around the mouse
         if state == .disabled {
-            let center = NSPoint(x: w / 2, y: (h - 1) / 2)
+            let center = NSPoint(x: w / 2, y: h / 2)
             let radius: CGFloat = min(w, h) / 2 - 0.5
             let circle = NSBezierPath(ovalIn: NSRect(
                 x: center.x - radius, y: center.y - radius,
                 width: radius * 2, height: radius * 2
             ))
-            circle.lineWidth = 1.4
+            circle.lineWidth = 1.6
             circle.stroke()
             let slash = NSBezierPath()
-            let offset = radius * 0.707 // cos(45°)
+            let offset = radius * 0.707
             slash.move(to: NSPoint(x: center.x - offset, y: center.y + offset))
             slash.line(to: NSPoint(x: center.x + offset, y: center.y - offset))
-            slash.lineWidth = 1.4
+            slash.lineWidth = 1.6
             slash.stroke()
         }
 
@@ -222,7 +256,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func updateIcon() {
-        let state: IconState = !isEnabled ? .disabled : isMiddleClicking ? .active : .idle
+        let state: IconState = !isEnabled ? .disabled : isMiddleClicking ? .active : isLeftDragging ? .leftDrag : .idle
         let icon = makeMenuBarIcon(state)
         icon.isTemplate = true
         statusItem.button?.image = icon
