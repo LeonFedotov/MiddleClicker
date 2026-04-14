@@ -16,6 +16,7 @@ Built for 3D apps like Blender, Maya, and CAD software where middle-mouse drag i
 - **Native trackpad support** — works with physical clicks and holds, including continuous middle-mouse drags
 - **Auto-recovery** — re-enables itself if macOS disables the event tap under load
 - **Persistent settings** — modifier key and enabled state are saved across restarts
+- **Signed & notarized** — no Gatekeeper warnings, just open and run
 
 ## Install
 
@@ -30,8 +31,7 @@ brew install --cask middleclicker
 
 1. Grab `MiddleClicker_Installer.dmg` from the [Releases](https://github.com/LeonFedotov/MiddleClicker/releases) page
 2. Open the DMG and drag **MiddleClicker** into Applications
-3. First launch: right-click the app and select **Open** (it's unsigned)
-4. Grant **Accessibility** permissions when prompted
+3. Grant **Accessibility** permissions when prompted
 
 ### Build from source
 
@@ -41,7 +41,9 @@ cd MiddleClicker
 ./build.sh
 ```
 
-This compiles the app, codesigns it ad-hoc, and packages `MiddleClicker_Installer.dmg`.
+This compiles the app, signs it with Developer ID, notarizes it, and packages `MiddleClicker_Installer.dmg`.
+
+Building requires a Developer ID certificate and notarization credentials stored in Keychain (see comments in `build.sh`).
 
 ## Usage
 
@@ -49,7 +51,8 @@ Once running, you'll see a mouse icon in your menu bar. Click it to:
 
 - **Enabled** — toggle middle-click emulation on/off
 - **Modifier Key** — pick which key activates middle-click (default: Fn)
-- **Quit MiddleClicker**
+- **MiddleClicker v*X.Y.Z*** — opens the GitHub repo
+- **Quit**
 
 Hold your chosen modifier and click/drag on the trackpad to emulate a middle-mouse button.
 
