@@ -1,7 +1,8 @@
 import Cocoa
 import CoreGraphics
+import ServiceManagement
 
-let appVersion = "1.3.0"
+let appVersion = "1.4.0"
 
 // Global state
 var isMiddleClicking = false
@@ -237,6 +238,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         modifierItem.submenu = modifierSubmenu
         menu.addItem(modifierItem)
 
+        // Start on Login toggle
+        let loginItem = NSMenuItem(title: "Start on Login", action: #selector(toggleLoginItem(_:)), keyEquivalent: "")
+        if #available(macOS 13.0, *) {
+            loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        }
+        menu.addItem(loginItem)
+
         menu.addItem(NSMenuItem.separator())
         let versionItem = NSMenuItem(title: "MiddleClicker v\(appVersion)", action: #selector(openRepo), keyEquivalent: "")
         menu.addItem(versionItem)
@@ -299,6 +307,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func openRepo() {
         NSWorkspace.shared.open(URL(string: "https://github.com/LeonFedotov/MiddleClicker")!)
+    }
+
+    @available(macOS 13.0, *)
+    @objc func toggleLoginItem(_ sender: NSMenuItem) {
+        let service = SMAppService.mainApp
+        do {
+            if service.status == .enabled {
+                try service.unregister()
+                sender.state = .off
+            } else {
+                try service.register()
+                sender.state = .on
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Failed to update login item"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
     }
 
     @objc func quitApp() {
